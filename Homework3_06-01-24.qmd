@@ -1,0 +1,330 @@
+---
+title: "Tidyverse functions & manipulations"
+author: Laraib Azmat
+date: June 01, 2024
+format: html
+---
+
+```{r library read in}
+library(conflicted)
+library(tidyverse)
+library(readr)
+library(readxl)
+library(janitor)
+library(DBI)
+conflicts_prefer(dplyr::filter)
+```
+
+## Task 1: Conceptual Questions
+
+1.  If your working directory is myfolder/homework/, what relative path would you specify to get the file located at myfolder/MyData.csv?
+
+> `.myfolder/MyData.csv`
+
+2.  What are the major benefits of using R projects?
+
+> R projects allow for all the work being done to be in a nice, self-contained folder with all of the scripts, figures and history needed. 
+
+
+3.  What is git and what is github?
+
+> Git is a popular version control system that tracks changes made overtime and records them in a repository; github is a cloud platform that hosts those repositories.
+
+4.  What are the two main differences between a tibble and a data.frame?
+
+> Tibbles only print the first ten rows of the data and strict subsetting. They also do not rearrange names,  ie: `"list name"` to `"list.name"` like data frames do.  
+
+5.  Rewrite the following nested function call using base R’s chaining operator:
+
+```{r original}
+arrange(filter(select(as_tibble(iris), starts_with("Petal"), Species), Petal.Length < 1.55), Species)
+```
+
+```{r rewrite in base}
+#subset with petal length less that 1.55, species is setosa and dropping the Sepal length and width 
+iris_subset <- subset(iris, Petal.Length < 1.55, 5 == "setosa", select = -c(1, 2))
+iris_subset
+```
+
+6.  What is meant by long format data and wide format data? Which do we generally prefer for statistical analysis?
+
+> Long format has data that does repeat in the first column vs wide format does not. Wide format is the best for data analysis. 
+
+
+## Task 2: Reading Delimited Data
+### Glass Data
+
+1.    Read in the data, adding column names, printing out the tibble
+```{r glass data manip}
+#read in the data (The column names are set to false because I used a local download of the dataset)
+glass_data <- read_csv("./data/glass.data.csv", col_names = FALSE, show_col_types = FALSE)
+
+#rename the columns (I redid this one after looking up how to rename quickly)
+oldnames = c("X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8", "X9", "X10", "X11")
+newnames = c("Id.number", "RI", "Na", "Mg", "Al", "Si", "K", "Ca", "Ba", "Fe", "Type_of_glass")
+glass_data <- glass_data %>% rename_with(~ newnames[which(oldnames == .x)])
+
+#print the tibble 
+glass_data
+```
+
+2.    Starting a chain that overwrites Type_of_glass using mutate(). Continuing and keeping only observations where Fe < 0.2 and Type_of_glass is “tableware” or “headlamp”.
+```{r glass data manip 2}
+#starting a new chain
+glass_data %>%
+  #overwrite the Type_of_glass variable using recode
+  mutate(
+    Type_of_glass = recode(Type_of_glass,
+                           '1' = 'building_windows_float_processed',
+                           '2' = 'building_windows_non_float_processed',
+                           '3' = 'vehicle_windows_float_processed',
+                           '4' = 'vehicle_windows_non_float_processed',
+                           '5' = 'containers',
+                           '6' = 'tableware',
+                           '7' = 'headlamps')) %>% 
+  #using filter to drop certain elements
+  filter(Type_of_glass %in% c("tableware", "headlamps") & Fe < 0.2)
+```
+
+### Yeast Data
+
+1.    Read in the data, adding column names, printing out the tibble  
+```{r yeast data manip}
+#read in the data with no column names
+yeast_data <- read_table("./data/yeast.data.csv", col_names = FALSE)
+
+#printing the tibble
+yeast_data
+```
+
+2. Starting a chain that removes seq_name and nuc columns. Continuing to add columns corresponding to mean and median of numeric variables at each class grouping. 
+```{r yeast data manip2}
+#create a new object to store edits
+yeast_data |> 
+  #renaming columns with the rename function 
+  rename(
+    seq_name = X1, 
+    mcg = X2, 
+    gvh = X3, 
+    alm = X4, 
+    mit = X5, 
+    erl = X6, 
+    pox = X7, 
+    vac = X8, 
+    nuc = X9,
+    class =X10
+  ) |>
+  #dropping Sequence.Name column
+  select(class, !c(seq_name, nuc)) |>
+  #sorting to pull class to the first column
+  select(class, everything()) |>
+  #grouping by class variable
+  group_by(class) |>
+  #creating new columns to calculate means of num columns 
+  mutate(across(where(is.numeric), list(mean = mean, median = median))) |>
+  #reducing the number of 
+  mutate(across(where(is.numeric), ~ num(., digits = 2))) |>
+  #printing all the columns
+  print(width=Inf)
+```
+
+## Task 2: Combining Excel and Delimited Data
+
+1.    Importing the data from the first sheet using readxl and printing out the tibble.
+```{r excel data - white wine}
+#reading in an excel sheet with non-standard names
+white_wine_data <- read_excel("./data/white-wine.xlsx")
+
+#printing the tibblle
+white_wine_data
+```
+
+2.    Reading in names from second sheet and overwriting the column names of White_wine_data. 
+```{r excel data - white wine2}
+#reading in the second sheet
+white_wine_names <- read_excel("./data/white-wine.xlsx", 
+                               sheet = excel_sheets("./data/white-wine.xlsx")[2]
+                               )
+
+#renaming the columns using the second sheet
+colnames(white_wine_data) <- white_wine_names$Variables
+```
+
+3.   Adding a column with white whine type  
+```{r excel data - white wine3}
+#create a new object to store edits
+white_wine_edit <- white_wine_data |>
+  #adding a column with white as wine type
+  mutate(wine_type = "white") |>
+  #printing the edits 
+  print()
+```
+
+4.    Repeating read in with red wine data, renaming columns and adding wine type
+```{r excel data - red wine}
+#reading in an excel sheet with non-standard names
+red_wine_data <- read_delim("./data/red-wine.csv", delim = ";", show_col_types = FALSE)
+
+#printing the tibblle
+red_wine_data
+
+#create a new object to store edits
+red_wine_edit <- red_wine_data |> 
+  #cleaning column names
+  clean_names() |>
+  #renaming p_h to pH
+  rename("pH" = p_h) |>
+  #adding a column with red as wine type
+  mutate(
+    wine_type = "red"
+    ) |>
+  #printing the edits 
+  print()
+```
+
+5.    Combining data sets
+```{r combine data sets}
+#creating an object and binding both datasets together
+wine_data <- bind_rows(white_wine_edit, red_wine_edit)
+
+#printing the tibble
+wine_data
+```
+
+6.    Starting a chain on combined data object to filter using quality > 6.5 with alcohol alcohol < 132. Continuing to sort using descending quality. Continuing to select only variables with "acid", alcohol, type, and quality. Continuing to add the mean and standard deviation of alcohol based on quality. 
+```{r wine data analysis}
+wine_data |>
+  #filtering based on quality and alcohol values 
+  filter(quality > 6.5 & alcohol < 132) |>
+  #arrangeing in descending order by quality 
+  arrange(desc(quality)) |>
+  #printing the tibble
+  print() |>
+  #selecting only the columns that have "acid" in name, alchohol, quality and wine type
+  select(contains("acid"), alcohol, quality, wine_type) |>
+  #printing
+  print() |>
+  #grouping by quality for the summary step
+  group_by(quality) |>
+  #summarizing the tibble by quality grouping
+  mutate(across(alcohol, list(mean = mean, sd = sd)))
+```
+
+## Task 3: Database Practice 
+
+### Creating the connection to the database
+
+1.    Connecting to the database and listing all the tables.
+```{r lahman database}
+#connecting the database
+con <- dbConnect(RSQLite::SQLite(), "./data/lahman.db")
+
+#printing the tables within the connected database
+dbListTables(con)
+```
+
+2.    Using tbl() to return "Teams" table for year 2015.
+```{r Teams table}
+#using dplyr to print the Teams table 
+tbl(con, "Teams") |>
+  #only showing year 2015
+  filter(yearID == 2015) |>
+  #printing the query to add to the SQL code
+  show_query() |>
+  #printing the table
+  print()
+```
+
+3.    Repeating with sql() within tbl(). 
+```{r sql code}
+#using the code from `show_query` to print using SQL code
+tbl(con, sql(
+"SELECT *
+FROM `Teams`
+WHERE (`yearID` >= 2015.0)")
+)
+```
+
+4.    Return all of the players in "HallOfFame", year voted in, and category. 
+```{r analysis using dplyr}
+#creating an object for later (needed to add the `as_tibble` part due to error)
+halloffame <- as_tibble(tbl(con, "HallOfFame")) |>
+  #filtering by induction and player category
+  filter(inducted == "Y" & category == "Player") |>
+  #arranging alphabetically
+  arrange(playerID) |>
+  #selecting only the needed columns
+  select(playerID, yearID, category) |>
+  #printing
+  print()
+
+#doing the same for the object here
+people <- as_tibble(tbl(con, "People")) |>
+  #selecting only the desired columns
+  select(playerID, nameFirst, nameLast)|>
+  #printing
+  print()
+```
+
+5.    Combining with the People table in order to have the nameFirst and nameLast added to halloffame.
+```{r analysis using dplyr2}
+#combining the two tibbles by playerID's
+halloffame_people <- full_join(halloffame, people, by = 'playerID') |>
+  #filtering based on category
+  filter(!is.na(category)) |>
+  #readjusting to make the final tibble look nice
+  select(nameFirst, nameLast, everything()) |>
+  #printing
+  print()
+```
+
+6.    Returning only the playerID , G, W, and L columns from the "Managers".  Determining the overall win/loss records. Creating a new variable with win/loss percentage. Sorting the resulting data by descending win/loss percentage. 
+```{r managers}
+#making a new object to handle the managers values 
+managers <- as_tibble(tbl(con, "Managers")) |>
+  #selecting the desired columns
+  select(playerID, G, W, L) |>
+  #grouping by playerID
+  group_by(playerID) |>
+  #summarizing the values
+  summarize(G_managed = sum(G, na.rm = TRUE),
+            Total_W = sum(W, na.rm = TRUE),
+            Total_L = sum(L, na.rm = TRUE)) |>
+  #adding a new column with win percentage
+  mutate(Win_Percentage = (Total_W/G_managed)*100) |>
+  #reducing the number of digits
+  mutate(across(Win_Percentage, ~ num(., digits = 2))) |>
+  #arranging by descending win percentages 
+  arrange(desc(Win_Percentage)) |>
+  #printing
+  print()
+```
+
+7.    With results from the previous and adding information for only the people that managed a team and were inducted into the hall of fame.
+```{r managers2}
+#creating an object to handle the managers values
+halloffame_managers <- as_tibble(tbl(con, "HallOfFame")) |>
+  #filtering by induction and manager category
+  filter(inducted == "Y" & category == "Manager") |>
+  #selecting only the needed columns
+  select(playerID, yearID, category) |>
+  #printing
+  print()
+
+#combining the three objects by playerID's
+left_join(halloffame_managers, people, by = 'playerID') |>
+  left_join(managers, by = 'playerID') |>
+  #readjusting to make the final look nice
+  select(nameFirst, nameLast, everything()) |>
+  #sorting by win percentage again
+  arrange(desc(Win_Percentage)) |>
+  #printing
+  print()
+```
+
+### Closing the connection to the database
+```{r disconnect}
+#had to add this because I nearly set my ram on fire
+dbDisconnect(conn = con)
+```
+
